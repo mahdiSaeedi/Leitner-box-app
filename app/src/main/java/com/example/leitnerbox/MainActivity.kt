@@ -153,7 +153,16 @@ private enum class AppScreen {
     Home,
     Practice,
     Cards,
+    HomeCardList,
     ManageCards
+}
+
+private enum class HomeCardFilter(
+    val label: String
+) {
+    All("Cards"),
+    DueNow("Due now"),
+    Mastered("Mastered")
 }
 
 @Composable
@@ -177,6 +186,7 @@ private fun LeitnerApp() {
     }
     var showLanding by remember { mutableStateOf(true) }
     var currentScreen by remember { mutableStateOf(AppScreen.Home) }
+    var activeHomeCardFilter by remember { mutableStateOf(HomeCardFilter.All) }
     var selectedDeckId by remember {
         mutableStateOf(decks.firstOrNull()?.id ?: createDefaultDeck().id)
     }
@@ -233,7 +243,7 @@ private fun LeitnerApp() {
     }
 
     LaunchedEffect(Unit) {
-        delay(2_000)
+        delay(3_000)
         showLanding = false
     }
 
@@ -286,6 +296,10 @@ private fun LeitnerApp() {
                     decks = decks,
                     selectedDeckId = selectedDeckId,
                     onSelectDeck = { selectedDeckId = it },
+                    onOpenHomeCardList = { filter ->
+                        activeHomeCardFilter = filter
+                        currentScreen = AppScreen.HomeCardList
+                    },
                     onOpenCards = { currentScreen = AppScreen.Cards },
                     onOpenManageCards = { currentScreen = AppScreen.ManageCards },
                     onOpenHome = { currentScreen = AppScreen.Home },
@@ -324,6 +338,17 @@ private fun LeitnerApp() {
                             cards[index] = cards[index].copy(front = front, back = back)
                         }
                     },
+                    onOpenHome = { currentScreen = AppScreen.Home },
+                    onOpenCards = { currentScreen = AppScreen.Cards },
+                    onOpenManageCards = { currentScreen = AppScreen.ManageCards },
+                    onBack = { currentScreen = AppScreen.Home }
+                )
+            }
+            AppScreen.HomeCardList -> {
+                HomeCardListScreen(
+                    deck = selectedDeck,
+                    filter = activeHomeCardFilter,
+                    cards = selectedDeckCards.filterBy(activeHomeCardFilter),
                     onOpenHome = { currentScreen = AppScreen.Home },
                     onOpenCards = { currentScreen = AppScreen.Cards },
                     onOpenManageCards = { currentScreen = AppScreen.ManageCards },
@@ -447,6 +472,7 @@ private fun HomeScreen(
     decks: List<Deck>,
     selectedDeckId: String,
     onSelectDeck: (String) -> Unit,
+    onOpenHomeCardList: (HomeCardFilter) -> Unit,
     onOpenHome: () -> Unit,
     onOpenCards: () -> Unit,
     onOpenManageCards: () -> Unit,
@@ -497,7 +523,11 @@ private fun HomeScreen(
             }
 
             item {
-                StatsRow(cards = cards, dueCount = dueCount)
+                StatsRow(
+                    cards = cards,
+                    dueCount = dueCount,
+                    onOpenFilter = onOpenHomeCardList
+                )
             }
 
             item {
@@ -520,6 +550,96 @@ private fun HomeScreen(
                         modifier = Modifier.padding(top = 8.dp)
                     ) {
                         Text("Start practice")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeCardListScreen(
+    deck: Deck,
+    filter: HomeCardFilter,
+    cards: List<FlashCard>,
+    onOpenHome: () -> Unit,
+    onOpenCards: () -> Unit,
+    onOpenManageCards: () -> Unit,
+    onBack: () -> Unit
+) {
+    Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = filter.label,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "${deck.name}: ${cards.size} card${if (cards.size == 1) "" else "s"}",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = onBack) {
+                            Text("Back")
+                        }
+                        AppOverflowMenu(
+                            onOpenHome = onOpenHome,
+                            onOpenCards = onOpenCards,
+                            onOpenManageCards = onOpenManageCards
+                        )
+                    }
+                }
+            }
+
+            item {
+                if (cards.isEmpty()) {
+                    EmptyState(
+                        title = "No matching cards",
+                        subtitle = when (filter) {
+                            HomeCardFilter.All -> "This deck does not have any cards yet."
+                            HomeCardFilter.DueNow -> "There are no cards due in this deck right now."
+                            HomeCardFilter.Mastered -> "No cards have reached the mastered box in this deck yet."
+                        }
+                    )
+                } else {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant,
+                                    shape = RoundedCornerShape(20.dp)
+                                )
+                        ) {
+                            ReadOnlyCardTableHeader()
+                            cards.forEachIndexed { index, card ->
+                                if (index > 0) {
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                }
+                                ReadOnlyCardTableRow(card = card)
+                            }
+                        }
                     }
                 }
             }
@@ -1204,6 +1324,38 @@ private fun CardTableHeader() {
 }
 
 @Composable
+private fun ReadOnlyCardTableHeader() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        TableCell(
+            text = "Front",
+            weight = 1.5f,
+            fontWeight = FontWeight.Bold
+        )
+        TableCell(
+            text = "Back",
+            weight = 1.5f,
+            fontWeight = FontWeight.Bold
+        )
+        TableCell(
+            text = "Box",
+            weight = 0.6f,
+            fontWeight = FontWeight.Bold
+        )
+        TableCell(
+            text = "Due",
+            weight = 0.9f,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
 private fun CardTableRow(
     card: FlashCard,
     onEdit: () -> Unit,
@@ -1246,6 +1398,22 @@ private fun CardTableRow(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun ReadOnlyCardTableRow(card: FlashCard) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TableCell(text = card.front, weight = 1.5f)
+        TableCell(text = card.back, weight = 1.5f)
+        TableCell(text = card.box.toString(), weight = 0.6f)
+        TableCell(text = reviewLabel(card.nextReviewAt), weight = 0.9f)
     }
 }
 
@@ -1731,15 +1899,31 @@ private fun defaultCards(defaultDeckId: String): List<FlashCard> = listOf(
 )
 
 @Composable
-private fun StatsRow(cards: List<FlashCard>, dueCount: Int) {
+private fun StatsRow(
+    cards: List<FlashCard>,
+    dueCount: Int,
+    onOpenFilter: (HomeCardFilter) -> Unit
+) {
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        StatPill(label = "Cards", value = cards.size.toString())
-        StatPill(label = "Due now", value = dueCount.toString())
-        StatPill(label = "Mastered", value = cards.count { it.box == 5 }.toString())
+        StatPill(
+            label = "Cards",
+            value = cards.size.toString(),
+            onClick = { onOpenFilter(HomeCardFilter.All) }
+        )
+        StatPill(
+            label = "Due now",
+            value = dueCount.toString(),
+            onClick = { onOpenFilter(HomeCardFilter.DueNow) }
+        )
+        StatPill(
+            label = "Mastered",
+            value = cards.count { it.box == 5 }.toString(),
+            onClick = { onOpenFilter(HomeCardFilter.Mastered) }
+        )
     }
 }
 
@@ -1834,8 +2018,13 @@ private fun LeitnerReviewPlanContent(cards: List<FlashCard>) {
 }
 
 @Composable
-private fun StatPill(label: String, value: String) {
+private fun StatPill(
+    label: String,
+    value: String,
+    onClick: (() -> Unit)? = null
+) {
     Surface(
+        modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.secondaryContainer
     ) {
@@ -1850,6 +2039,15 @@ private fun StatPill(label: String, value: String) {
                 style = MaterialTheme.typography.bodyMedium
             )
         }
+    }
+}
+
+private fun List<FlashCard>.filterBy(filter: HomeCardFilter): List<FlashCard> {
+    val now = System.currentTimeMillis()
+    return when (filter) {
+        HomeCardFilter.All -> this
+        HomeCardFilter.DueNow -> filter { it.nextReviewAt <= now }
+        HomeCardFilter.Mastered -> filter { it.box == 5 }
     }
 }
 
