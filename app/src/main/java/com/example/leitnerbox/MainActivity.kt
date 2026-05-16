@@ -111,6 +111,11 @@ data class Deck(
     val name: String
 )
 
+private data class AddCardFeedback(
+    val message: String,
+    val isError: Boolean
+)
+
 private data class CardReviewResult(
     val wasCorrect: Boolean,
     val previousBox: Int,
@@ -193,6 +198,7 @@ private fun LeitnerApp() {
     var frontText by remember { mutableStateOf("") }
     var backText by remember { mutableStateOf("") }
     var deckNameText by remember { mutableStateOf("") }
+    var addCardFeedback by remember { mutableStateOf<AddCardFeedback?>(null) }
     var csvMessage by remember { mutableStateOf<String?>(null) }
     val selectedDeck = decks.firstOrNull { it.id == selectedDeckId } ?: decks.first()
     val selectedDeckCards = cards.filter { it.deckId == selectedDeck.id }
@@ -360,25 +366,48 @@ private fun LeitnerApp() {
                     deck = selectedDeck,
                     decks = decks,
                     selectedDeckId = selectedDeckId,
+                    deckCardCount = selectedDeckCards.size,
                     frontText = frontText,
                     backText = backText,
                     deckNameText = deckNameText,
+                    addCardFeedback = addCardFeedback,
                     csvMessage = csvMessage,
-                    onSelectDeck = { selectedDeckId = it },
-                    onFrontChange = { frontText = it },
-                    onBackChange = { backText = it },
+                    onSelectDeck = {
+                        selectedDeckId = it
+                        addCardFeedback = null
+                    },
+                    onFrontChange = {
+                        frontText = it
+                        addCardFeedback = null
+                    },
+                    onBackChange = {
+                        backText = it
+                        addCardFeedback = null
+                    },
                     onDeckNameChange = { deckNameText = it },
                     onAddCard = {
                         val front = frontText.trim()
                         val back = backText.trim()
-                        if (front.isNotEmpty() && back.isNotEmpty()) {
+                        if (front.isEmpty() || back.isEmpty()) {
+                            addCardFeedback = AddCardFeedback(
+                                message = "Enter both sides before adding a card.",
+                                isError = true
+                            )
+                        } else {
                             val newCard = FlashCard(deckId = selectedDeck.id, front = front, back = back)
                             if (hasDuplicateCard(selectedDeckCards, newCard)) {
-                                csvMessage = "Duplicate card not added. \"$front\" already exists with the same back."
+                                addCardFeedback = AddCardFeedback(
+                                    message = "Duplicate card not added. \"$front\" already exists with the same back.",
+                                    isError = true
+                                )
                             } else {
                                 cards.add(0, newCard)
                                 frontText = ""
                                 backText = ""
+                                addCardFeedback = AddCardFeedback(
+                                    message = "Added \"$front\" to ${selectedDeck.name}. ${selectedDeckCards.size + 1} cards in this deck.",
+                                    isError = false
+                                )
                                 csvMessage = null
                             }
                         }
@@ -652,9 +681,11 @@ private fun ManageCardsScreen(
     deck: Deck,
     decks: List<Deck>,
     selectedDeckId: String,
+    deckCardCount: Int,
     frontText: String,
     backText: String,
     deckNameText: String,
+    addCardFeedback: AddCardFeedback?,
     csvMessage: String?,
     onSelectDeck: (String) -> Unit,
     onFrontChange: (String) -> Unit,
@@ -740,7 +771,7 @@ private fun ManageCardsScreen(
             item {
                 SectionCard(title = "Add a flashcard") {
                     Text(
-                        text = "Adding to ${deck.name}",
+                        text = "Adding to ${deck.name} · $deckCardCount card${if (deckCardCount == 1) "" else "s"}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -765,6 +796,18 @@ private fun ManageCardsScreen(
                         modifier = Modifier.padding(top = 12.dp)
                     ) {
                         Text("Add card")
+                    }
+                    addCardFeedback?.let { feedback ->
+                        Text(
+                            text = feedback.message,
+                            modifier = Modifier.padding(top = 12.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (feedback.isError) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            }
+                        )
                     }
                 }
             }
